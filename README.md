@@ -1,48 +1,89 @@
----
-doc_radar:
-  sentinels:
-    - file: brigade.zig
-      contains: [BRIGADE_SHARD, BRIGADE_FILTER, BRIGADE_SKIP, BRIGADE_TIMES]
-      description: "the four environment levers this README documents are the four the runner reads"
-    - file: build.zig
-      contains: ["test-shards", "test-filter", "test-skip", dependencyFromBuildZig]
-      description: "the option triple a consumer inherits, and the self-locating dependency lookup that needs no zon key name"
-    - file: brigade.zig
-      contains: [".simple", disableInstrumentation]
-      description: "simple-mode runner (the server protocol cannot express a parallel run), and the instrumentation opt-out the runner's own frames need"
-  occurrences:
-    - file: test/fixtures.zig
-      pattern: '^test "fixture '
-      equals: 12
-      description: "build.zig's partition oracle hand-computes residue counts against a corpus of exactly twelve"
----
+# brigade: A Shard-Aware Zig Test Runner
 
-# brigade
+- [Overview](#overview)
+- [Should I Be Using This?](#should-i-be-using-this)
+- [Support](#support)
+- [Install](#install)
+- [How It Works](#how-it-works)
+  - [Residues, Not Blocks](#residues-not-blocks)
+  - [Fixed External Names](#fixed-external-names)
+- [Levers](#levers)
+  - [The Quick Tier](#the-quick-tier)
+- [Which Stream Should a Test Write To?](#which-stream-should-a-test-write-to)
+- [What It Refuses to Do](#what-it-refuses-to-do)
+- [Prior Art](#prior-art)
+- [Build and Test](#build-and-test)
+- [License](#license)
 
-**Your Zig test suite is not slow. It is serial.**
+## Overview
+
+Your Zig test suite is not slow. It is serial.
 
 Zig's stock test runner walks `builtin.test_functions` start to finish in one
-process. One core, however many the machine has. The suite this was written for
-reached ~1000 tests and about eighteen minutes of wall clock at `user/real =
-0.64` on a 16-core box - which is to say fifteen of those cores sat there
-watching.
+process. One core, however many the machine has.
+
+The suite this was written for reached ~1000 tests and about eighteen minutes of
+wall clock at `user/real = 0.64` on a 16-core box - which is to say fifteen of
+those cores sat there watching.
 
 brigade splits the walk across processes and hands the scheduling to the build
 runner you already have.
 
-| Run | Wall |
-| --- | --- |
-| stock serial runner | ~1060 s |
-| `zig build test` (sharded) | ~330 s - floored by one 320 s test |
-| `zig build test-quick` | ~70 s |
-| `-Dtest-filter="<one test>"` | ~0.1 s |
+- **The stock serial runner** - about 1060 s.
+- **`zig build test`, sharded** - about 330 s, floored by one 320 s test.
+- **`zig build test-quick`** - about 70 s.
+- **`-Dtest-filter="<one test>"`** - about 0.1 s.
 
 Measured on a ~1000-test suite on an otherwise idle 16-core box. Take the
 ratios, not the absolutes.
 
-## Use it
+## Should I Be Using This?
 
-`build.zig.zon`:
+brigade is for a Zig package whose unit-test suite has outgrown a single core.
+
+- **A suite where the wall clock is the problem** - [installing
+  it](#install) changes no test, only which process runs which.
+- **An edit loop that needs one test back in a second** - `-Dtest-filter`
+  narrows before sharding, so a filtered single shard is the tightest run
+  available.
+- **A suite with a few long poles** - name them and get a [quick
+  tier](#the-quick-tier) that stands them aside, while `test` stays the
+  complete suite.
+- **A build helper attaching steps to somebody else's builder** - pass
+  `.source` explicitly, as the `Options.source` doc comment in
+  [`build.zig`](build.zig) spells out.
+
+Stay on [Zig's stock
+runner](https://github.com/ziglang/zig/blob/master/lib/compiler/test_runner.zig)
+if none of those are your problem.
+
+Coverage-guided fuzzing is what brigade gives up in exchange, since
+`std.testing.fuzz` needs the `std.zig.Server` protocol it deliberately does not
+speak. Keep `zig build fuzz` on the stock runner.
+
+A test that owns a fixed `/tmp` path or a fixed port needs [keying per
+pid](#fixed-external-names) before it can be sharded at all, and
+`-Dtest-shards=1` is the honest interim.
+
+## Support
+
+- Bugs and feature requests go in this repository's [issue
+  tracker](https://github.com/The-Billy-Company/brigade/issues). A selection bug
+  needs the `BRIGADE_SHARD` spec, the test count, and the summary line the shard
+  printed.
+- Security vulnerabilities never go in a public issue. Report one privately,
+  through this repository's security advisories.
+- A failing test is your suite's business first. Per-test semantics are
+  byte-identical to the stock runner, so reproduce under `-Dtest-shards=1`; a
+  failure that survives only when sharded is a brigade report, and the shard
+  spec is the evidence.
+- `irregex`, `gist`, `relate`, and `blast` each depend on brigade and have their
+  own trackers. File a suite problem there; it moves here if the cause turns out
+  to be selection.
+
+## Install
+
+Declare the dependency in `build.zig.zon`:
 
 ```zig
 .dependencies = .{
@@ -50,7 +91,7 @@ ratios, not the absolutes.
 },
 ```
 
-`build.zig`:
+Then hand `build.zig` the runner, and fan a step out across it:
 
 ```zig
 const brigade = @import("brigade");
@@ -66,50 +107,61 @@ pub fn build(b: *std.Build) void {
 That is the whole integration. You now have `-Dtest-shards`, `-Dtest-filter`,
 and `-Dtest-skip` on your package, and `zig build test` runs on every core.
 
-## How it works, and why it is boring
+## How It Works
 
-The interesting decision is what brigade *doesn't* do.
+brigade is boring on purpose, and the interesting decision is what it *doesn't*
+do.
 
 It does not implement parallelism. A process claims the residues `i, i+n,
 i+2n, ...` of `BRIGADE_SHARD=i/n`, and `Brigade.shard` hangs n independent `Run`
-steps off **one** compiled binary. Zig's build runner already schedules
-independent steps across cores, already renders their progress, and already
-gives each one its own output pipe. So there is no thread here, no fork, no
-shared state, and no interleaved stderr - a shard is just a different process.
-Nothing in your suite has to become thread-safe.
+steps off one compiled binary.
+
+Zig's build runner already schedules independent steps across cores, already
+renders their progress, and already gives each one its own output pipe. So there
+is no thread here, no fork, no shared state, and no interleaved stderr - a shard
+is just a different process. Nothing in your suite has to become thread-safe.
 
 Per-test semantics are byte-identical to the stock runner: fresh allocator and
 `Io` instance, leak detection attributed to the test that leaked,
 `error.SkipZigTest`, error-return traces, and the "a test that logs `.err`
 fails" contract. Sharding is invisible to test authors.
 
-**Residues, not blocks.** Tests are declared in module order, so cost clusters
-by module - every differential in one file lands together. Striding spreads each
-cluster across all shards, which is the best balance a static split can reach
-without a work queue. brigade then asks for **2x** as many shards as cores, and
-the build runner's own in-flight limit does the rest: a shard that drew a cheap
-slice ends and the next starts, instead of a core idling beside a grinding
-neighbor.
+### Residues, Not Blocks
 
-**One caveat, stated plainly.** A shard is a process, so two tests that collide
-on a fixed external name - the same `/tmp` fixture path, the same listening
-socket - can now run at the same time. Key those per test and per pid.
+Tests are declared in module order, so cost clusters by module - every
+differential in one file lands together. Striding spreads each cluster across
+all shards, which is the best balance a static split can reach without a work
+queue.
+
+brigade then asks for 2x as many shards as cores, and the build runner's own
+in-flight limit does the rest. A shard that drew a cheap slice ends and the next
+starts, instead of a core idling beside a grinding neighbor.
+
+### Fixed External Names
+
+A shard is a process, so two tests that collide on a fixed external name - the
+same `/tmp` fixture path, the same listening socket - can now run at the same
+time. Key those per test and per pid.
+
 `-Dtest-shards=1` restores a single-process run for a bisect or a debugger.
 
 ## Levers
 
-| Lever | Effect |
-| --- | --- |
-| `-Dtest-shards=N` | processes to split across. Default 2x CPU count, capped at 64. `1` restores a single-process run. |
-| `-Dtest-filter=<substr,...>` | run only tests whose name contains one of these. **A name copied out of a FAIL line is already a valid filter.** |
-| `-Dtest-skip=<substr,...>` | the inverse. |
-| `BRIGADE_TIMES=1` | emit `<ms>\t<name>` per test - how you find a long pole in the first place. |
+Four levers resize or narrow a run.
+
+- **`-Dtest-shards=N`** - processes to split across. Default 2x CPU count,
+  capped at 64. `1` restores a single-process run.
+- **`-Dtest-filter=<substr,...>`** - run only tests whose name contains one of
+  these. A name copied out of a FAIL line is already a valid filter.
+- **`-Dtest-skip=<substr,...>`** - the inverse.
+- **`BRIGADE_TIMES=1`** - emit `<ms>\t<name>` per test, which is how you find a
+  long pole in the first place.
 
 Each spelling caches separately, because a shard's environment is part of its
 cache key. An unchanged tree replays a proven-green shard instead of re-running
 it, and only a success is ever recorded.
 
-### The quick tier
+### The Quick Tier
 
 Sharding cannot split one test, so past some point the slowest *single* test is
 the floor. Name the long poles and get a tier that stands them aside:
@@ -120,26 +172,34 @@ bg.shard(b.step("test-quick", "the suite minus its long poles"), tests, .{ .skip
 ```
 
 `test` stays the complete suite and remains what a push is judged by;
-`test-quick` is a deliberately weaker proof for the edit loop. A `deep` entry
-that stops matching - renamed, deleted - is reported by name, and can only ever
-make the quick tier slower, never less safe.
+`test-quick` is a deliberately weaker proof for the edit loop.
 
-## Which stream a test writes to is a correctness question
+A `deep` entry that stops matching - renamed, deleted - is reported by name, and
+can only ever make the quick tier slower, never less safe.
 
-This one costs people a week if they discover it themselves, so it is worth
-saying up front.
+## Which Stream Should a Test Write To?
 
-The build runner renders any step with **non-empty stderr** through its failure
+Which stream a test writes to is a correctness question. This one costs people a
+week if they discover it themselves, so it is worth saying up front.
+
+The build runner renders any step with non-empty stderr through its failure
 printer - step name, the text, a `failed command: <argv>` caption - whether or
 not the step failed. (`build_runner.zig`: *"No matter the result, we want to
 display error/warning messages"*; `result_failed_command` is populated for a
-success too.) So stderr is not "the diagnostic stream" here. It is the stream
-that makes a green shard look dead. Seven narrating tests in one suite made
-every green run print seven blocks indistinguishable from seven crashed
-processes, which is how you teach people to stop reading test output.
+success too.)
 
-So: `note` for what a **passing** test proved, on stdout, which the build step
+So stderr is not "the diagnostic stream" here. It is the stream that makes a
+green shard look dead.
+
+Seven narrating tests in one suite made every green run print seven blocks
+indistinguishable from seven crashed processes, which is how you teach people to
+stop reading test output.
+
+So: `note` for what a *passing* test proved, on stdout, which the build step
 captures and drops. `std.debug.print` for what a reader must act on.
+
+A test body reaches `note` through the runner, which is the root module of the
+binary it was compiled into:
 
 ```zig
 const brigade = @import("root"); // the runner is your test binary's root module
@@ -155,7 +215,7 @@ The trade, stated rather than discovered: because the build step drops stdout, a
 by printing the one `BRIGADE_SHARD=... BRIGADE_FILTER=...` command that replays
 it in full.
 
-## What it refuses to do
+## What It Refuses to Do
 
 - **Silently own the wrong subset.** A malformed `BRIGADE_SHARD` is fatal, not
   defaulted. A shard that quietly owns nothing is a green suite that tested
@@ -172,7 +232,7 @@ it in full.
   the protocol, so `std.testing.fuzz` here degrades to replaying the declared
   corpus plus the empty input - keep `zig build fuzz` on the stock runner.
 
-## Prior art
+## Prior Art
 
 - **Zig's own default runner** (`lib/compiler/test_runner.zig`, MIT). brigade
   reimplements its per-test semantics deliberately and exactly; the only
@@ -189,7 +249,9 @@ it in full.
   because a Zig test binary's startup is cheap but not free at ~1000 tests, and
   because the build runner - not brigade - should own the scheduling.
 
-## Testing brigade
+## Build and Test
+
+brigade runs its own suite, sharded by itself:
 
 ```bash
 zig build test          # the suite, run by brigade itself
@@ -197,13 +259,16 @@ zig build test -Dtest-shards=1
 zig build check         # compile without running (--watch / ZLS)
 ```
 
-Two layers, because the two halves fail differently. `test/selection.zig`
-proves the residue and pattern algebra in-process - including, exhaustively
-over shard counts 1..32 and 256 positions, that **every test is claimed by
-exactly one shard**. `test/fixtures.zig` is a corpus of twelve inert tests that
-the real runner is pointed at from outside, so every partition claim is checked
-against a count worked out from the residue contract by hand rather than
-reported by the code under test.
+Two layers, because the two halves fail differently.
+
+`test/selection.zig` proves the residue and pattern algebra in-process -
+including, exhaustively over shard counts 1..32 and 256 positions, that every
+test is claimed by exactly one shard.
+
+`test/fixtures.zig` is a corpus of twelve inert tests that the real runner is
+pointed at from outside, so every partition claim is checked against a count
+worked out from the residue contract by hand rather than reported by the code
+under test.
 
 ## License
 
