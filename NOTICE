@@ -1,0 +1,15 @@
+brigade — a shard-aware unit-test runner for Zig
+Copyright 2026 The Billy Company
+
+This product includes software developed at The Billy Company
+(https://billylives.com/).
+
+No third-party source or data is bundled. `brigade.zig` depends only on the Zig
+standard library.
+
+It does deliberately reimplement the per-test semantics of Zig's own default
+test runner (`lib/compiler/test_runner.zig`, MIT) — fresh allocator and `Io`
+instance per test, leak attribution, `error.SkipZigTest`, error-return traces,
+and the "a test that logs .err fails" contract — so that sharding is invisible
+to test authors. That parity is the point of the file; the implementation is
+our own.

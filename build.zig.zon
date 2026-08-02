@@ -1,0 +1,23 @@
+.{
+    .name = .brigade,
+    .version = "0.1.0", // x-release-please-version
+    .fingerprint = 0x80206e9d495f7dd6,
+    .minimum_zig_version = "0.16.0",
+    // Nothing. A test runner that needed a dependency graph to run your tests
+    // would be a strange thing to trust with them.
+    .dependencies = .{},
+    .paths = .{
+        // The runner. Consumers reach it through `brigade.init(b, .{}).runner()`
+        // rather than by name, so this path is an implementation detail — but
+        // it has to ship, or the dependency resolves to a package with no
+        // runner in it.
+        "brigade.zig",
+        "build.zig",
+        "build.zig.zon",
+        "test",
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE",
+        "NOTICE",
+    },
+}
