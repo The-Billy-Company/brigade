@@ -83,11 +83,18 @@ pid](#fixed-external-names) before it can be sharded at all, and
 
 ## Install
 
-Declare the dependency in `build.zig.zon`:
+Fetch it into `build.zig.zon`:
+
+```bash
+zig fetch --save \
+  https://github.com/The-Billy-Company/brigade/archive/refs/tags/v0.1.0.tar.gz
+```
+
+Or declare it by hand, which is what a checkout beside your own wants:
 
 ```zig
 .dependencies = .{
-    .brigade = .{ .path = "../brigade" }, // or url + hash
+    .brigade = .{ .path = "../brigade" },
 },
 ```
 
