@@ -205,3 +205,10 @@ test "narrowing composes with sharding: a filtered run still splits" {
     // suite would produce here.
     try std.testing.expectEqual([2]usize{ 2, 2 }, claimed);
 }
+
+test "note is reachable on the shipped root-module path" {
+    // Compiles and runs the consumer access path (`@import("root").note`).
+    // stdout is dropped by the build step on a green shard, so this is a
+    // reachability proof rather than an output assertion.
+    brigade.note("brigade note path ok\n", .{});
+}
