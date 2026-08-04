@@ -108,7 +108,12 @@ jobs:
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
           permission-contents: write
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The one checkout in this repository that must keep its credentials: the last
+      # step below pushes the fold commit back onto the release PR's branch, and it
+      # pushes with exactly this token. `persist-credentials: false` would leave that
+      # push with nothing to authenticate as. The token is the app's, minted for this
+      # job, scoped to contents:write, and revoked when the job ends.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 # zizmor: ignore[artipacked]
         with:
           token: ${{ steps.app-token.outputs.token }}
           ref: ${{ fromJson(needs.release-please.outputs.pr).headBranchName }}
@@ -123,11 +128,17 @@ jobs:
         with:
           enable-cache: false
 
+      # Both interpolations arrive through `env` rather than into the shell text: a
+      # release PR's branch name and a version string are data, and a `run:` block that
+      # pastes data into its own source is one unlucky character away from being a
+      # different script.
       - name: Fold changelog.d fragments into CHANGELOG.md at this PR's version
+        env:
+          RESULT: ${{ steps.version.outputs.result }}
+          BRANCH: ${{ fromJson(needs.release-please.outputs.pr).headBranchName }}
         run: |
           set -euo pipefail
-          version=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' \
-            <<<'${{ steps.version.outputs.result }}')
+          version=$(python3 -c 'import json,os; print(json.loads(os.environ["RESULT"])["version"])')
           uv run --no-project --python 3.12 --with towncrier==25.8.0 \
             towncrier build --yes --version "$version"
           if git diff --quiet -- CHANGELOG.md changelog.d; then
@@ -138,4 +149,4 @@ jobs:
           git config user.email 'billy-company-release[bot]@users.noreply.github.com'
           git add CHANGELOG.md changelog.d
           git commit -m "chore(changelog): fold fragments for v$version"
-          git push origin "HEAD:${{ fromJson(needs.release-please.outputs.pr).headBranchName }}"
+          git push origin "HEAD:$BRANCH"
