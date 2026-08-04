@@ -1,0 +1,147 @@
+name: release
+
+# brigade ships to no package registry. A consumer's `zig fetch --save
+# .../archive/refs/tags/vX.Y.Z.tar.gz` resolves straight off the git tag, so
+# the tag IS the artifact the instant it exists — there is no separate upload
+# step to gate the way the crate/wheel repos in this org gate crates.io/PyPI.
+# What this workflow gates instead is the human-facing GitHub Release: the
+# release-please config leaves it `draft: true`, and only after `verify`
+# proves the suite is green on all three OSes and `archive` proves the exact
+# tagged tarball is content-complete and genuinely `zig fetch`-able does
+# `publish-release` take the draft live.
+#
+# A maintainer prepares a release by merging the release-please PR
+# (release-please.yml), which already folded the changelog and bumped
+# `build.zig.zon` — this workflow only ever verifies and un-drafts.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+# Serialized per tag, and never cancelled: the other workflow cancels a
+# superseded run because a newer commit makes the older answer irrelevant, but
+# a half-finished release is not an irrelevant answer.
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The shared release contract (`release.toml` + the org's `package-release`
+  # action), run once before anything else: is the tag the version
+  # `build.zig.zon` declares, is the changelog folded with the exact
+  # `## [X.Y.Z]` heading and no fragment left un-folded, did `release-ready`
+  # go green on this exact commit, and is this commit actually reachable from
+  # `main`? Every step below is conditioned on an actual tag, so a
+  # `workflow_dispatch` dry run (no tag) passes through as a no-op and
+  # `verify` still runs unpublished.
+  preflight:
+    name: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: version
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+        with:
+          command: version
+          args: --root . --tag ${{ github.ref_name }}
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+        with:
+          command: changelog
+          args: >-
+            --root . --require-fragments-empty
+            --version ${{ fromJSON(steps.version.outputs.result).version }}
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+        with:
+          command: tag-ancestor
+          args: ${{ github.repository }} ${{ github.sha }} --branch main
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+        with:
+          command: ci-status
+          args: ${{ github.repository }} ${{ github.sha }}
+
+  # Uncached and re-run on the tagged commit itself, for the same reason every
+  # sibling release workflow's `verify` is: a cache is writable by any branch
+  # that can trigger a workflow, so a release gate that reads one is verifying
+  # bytes an attacker could have contributed, not what this run just compiled.
+  verify:
+    name: verify (${{ matrix.os }})
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          use-cache: false
+      - run: zig build check
+      - run: zig build test
+
+  # The one check nothing else runs: does the exact tarball a consumer's `zig
+  # fetch` resolves for this tag actually carry everything `build.zig.zon`
+  # promised, and does the fetcher itself accept it? Deliberately reads the
+  # tag through GitHub's own archive endpoint rather than `git archive`
+  # locally — that endpoint, not the local tree, is what every consumer's
+  # `zig fetch` actually hits, so this proves the real path rather than a
+  # stand-in for it.
+  archive:
+    name: archive
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [preflight, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+          use-cache: false
+      - name: Download the exact tarball zig fetch will resolve
+        env:
+          URL: https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz
+        run: curl -sSL --fail -o /tmp/release.tar.gz "$URL"
+      - name: Every declared path is inside it
+        run: python3 tools/archive_check.py /tmp/release.tar.gz build.zig.zon
+      - name: zig fetch resolves and hashes it
+        env:
+          URL: https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.ref_name }}.tar.gz
+        run: |
+          set -euo pipefail
+          zig fetch "$URL"
+
+  # The draft went out the moment release-please tagged this commit; this is
+  # what takes it live, and only after `archive` proved the exact tarball a
+  # consumer's `zig fetch` resolves is complete and fetchable. GITHUB_TOKEN is
+  # sufficient here — unlike creating the release PR, editing an existing
+  # release in reaction to a tag this workflow did not itself push is a write
+  # the Actions identity is allowed to make.
+  publish-release:
+    name: publish release
+    needs: [preflight, verify, archive]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to take the tag's draft release out of draft
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --repo "$REPO" --draft=false

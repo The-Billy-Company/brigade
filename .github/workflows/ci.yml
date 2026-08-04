@@ -1,0 +1,113 @@
+# What has to be true before a change lands.
+#
+# brigade forks processes and reads their exit codes, so the one thing worth
+# proving on every push is that the fan-out itself is correct on every OS a
+# consumer's `zig build test` might run on — not just the host this was
+# written on.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A force-push mid-run should cancel the run it obsoleted, not race it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  ZIG_VERSION: 0.16.0
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      # Compile-only first: when this fails, the test log below is noise, and
+      # the failure is one line rather than a suite's worth of scrollback.
+      - run: zig build check
+      - run: zig build test
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - run: zig fmt --check .
+
+  # Fragment names/types/bodies parse, and towncrier's own draft render is
+  # non-vacuous — proven on every PR rather than discovered at tag time, when
+  # a malformed `changelog.d/` entry is far more expensive to fix.
+  changelog:
+    name: changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+        with:
+          command: changelog
+          args: --root .
+
+  # These files are the only thing here that nothing else type-checks. A
+  # workflow with an expression in a place the context is not available does
+  # not fail a job — it fails to schedule any job at all, and the run reports
+  # "workflow file issue" with no log to read. So the linters run against them
+  # too: actionlint for the schema and expression contexts, zizmor for the
+  # security posture (unpinned actions, credential persistence, injection).
+  actions:
+    name: actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - run: uv run --no-project --with zizmor==1.29.0 zizmor --no-online-audits --strict-collection .
+      - uses: docker://rhysd/actionlint:1.7.7
+
+  # The one check `release.yml`'s preflight polls for on the exact tagged
+  # commit (`release.toml`'s `[ci].required_check`). Everything above feeds
+  # into it, so a red job blocks the tag rather than the publish workflow
+  # discovering it minutes into the archive verification. `if: always()` is
+  # required — the default `if` on a job would skip this one the moment
+  # anything upstream failed, which is exactly the case it has to report on.
+  release-ready:
+    if: always()
+    needs: [test, fmt, changelog, actions]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every required job is green
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          python3 -c "
+          import json, os
+          needs = json.loads(os.environ['NEEDS'])
+          failed = sorted(name for name, info in needs.items() if info['result'] != 'success')
+          if failed:
+              raise SystemExit(f'not release-ready: {failed} did not succeed')
+          print(f'release-ready: {len(needs)} required jobs all succeeded')
+          "

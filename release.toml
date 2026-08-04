@@ -1,0 +1,28 @@
+# Release contract for brigade, read by
+# The-Billy-Company/.github/actions/package-release. See that action's
+# README.md for the full schema; this file states only the facts specific to
+# this repository.
+#
+# brigade ships to no package registry — it is a pure Zig package, fetched by
+# consumers straight off a git tag (`zig fetch --save
+# .../archive/refs/tags/vX.Y.Z.tar.gz`), so there is no `[registries]` table:
+# the tag itself is the artifact, and release.yml's `archive` job proves that
+# tarball is genuinely fetchable and content-complete before the GitHub
+# Release is taken out of draft.
+
+[package]
+name = "brigade"
+version_source = "build.zig.zon"
+version_kind = "zig-zon"
+
+[changelog]
+directory = "changelog.d"
+file = "CHANGELOG.md"
+ignore = [".gitkeep", "README.md"]
+types = ["added", "changed", "deprecated", "removed", "fixed", "security"]
+stem_pattern = '^\+[a-z0-9]+(-[a-z0-9]+)*$'
+min_body_chars = 40
+
+[ci]
+required_check = "release-ready"
+default_branch = "main"

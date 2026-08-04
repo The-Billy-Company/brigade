@@ -15,6 +15,12 @@ title_format = "## [{version}] - {project_date}"
 # turns a hanging `-` into a setext heading, and splits inline code spans across
 # lines. Off, the fragment's own layout is preserved and only indented.
 wrap = false
+# Not a cosmetic whitelist — this key is what makes a malformed fragment an
+# error. Without it, towncrier silently ignores any filename it cannot parse, so
+# `+thing.fixd.md` renders nothing, exits 0, and goes missing from the release
+# with no complaint. Setting `ignore` flips that: anything in `changelog.d` that
+# is neither a valid fragment nor named here fails the build and says which file.
+ignore = [ ".gitkeep", "README.md" ]
 
 [[tool.towncrier.type]]
 directory = "added"
