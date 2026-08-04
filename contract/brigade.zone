@@ -1,0 +1,24 @@
+// brigade — import topology, drafted by `zoning draft` from the real
+// @import graph. Every line below is TRUE of the tree as it stands: this is
+// a description, not a wish. Read it once, then start tightening it —
+// merging two zones or sealing a directory is where the value is.
+
+package brigade {
+    root     .
+    language zig
+    facade   brigade.zig
+}
+
+// Zones, low to high: an import may not point up the page. The order is a
+// topological sort of what imports what today, so nothing points up yet.
+zones {
+    test  test/**
+}
+
+// Structural laws. The reach ceiling is what the tree needs today — lower it
+// when a file moves nearer what it depends on; never raise it to go green.
+limit  reach to 0 hops
+forbid cycles across directories
+
+// Nothing else to declare: this graph is already a stack. `zoning status`
+// lists the directories that could be sealed next.

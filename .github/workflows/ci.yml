@@ -87,6 +87,28 @@ jobs:
       - run: uv run --no-project --with zizmor==1.29.0 zizmor --no-online-audits --strict-collection .
       - uses: docker://rhysd/actionlint:1.7.7
 
+  # `contract/brigade.zone` declares this package's import topology. The graph is
+  # small enough today that the contract reads like a formality — which is the
+  # reason to have it now rather than later, because every package that vendors
+  # brigade in-tree is excused from describing it and defers to this job. A
+  # dependency "governed upstream" is only governed if upstream checks.
+  #
+  # No Zig and no build: zoning reads the tree, not a build graph.
+  topology:
+    name: topology
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      # The fix is in the code, or in a `variance ... because "..."` that says
+      # what would retire it — never in widening the contract to match whatever
+      # the imports happen to do today. `--complete` adds the claim no law can
+      # make: every package here carries a contract, including the next one.
+      - name: Import topology
+        run: uv run --no-project --with zoning==1.0.0 zoning verify --complete
+
   # The one check `release.yml`'s preflight polls for on the exact tagged
   # commit (`release.toml`'s `[ci].required_check`). Everything above feeds
   # into it, so a red job blocks the tag rather than the publish workflow
@@ -95,7 +117,7 @@ jobs:
   # anything upstream failed, which is exactly the case it has to report on.
   release-ready:
     if: always()
-    needs: [test, fmt, changelog, actions]
+    needs: [test, fmt, changelog, actions, topology]
     runs-on: ubuntu-latest
     steps:
       - name: every required job is green
