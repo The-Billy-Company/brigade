@@ -107,7 +107,7 @@ jobs:
       # the imports happen to do today. `--complete` adds the claim no law can
       # make: every package here carries a contract, including the next one.
       - name: Import topology
-        run: uv run --no-project --with zoning==1.0.0 zoning verify --complete
+        run: uv run --no-project --with zoning==1.1.0 zoning verify --complete
 
   # The one check `release.yml`'s preflight polls for on the exact tagged
   # commit (`release.toml`'s `[ci].required_check`). Everything above feeds
