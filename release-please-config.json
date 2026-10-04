@@ -89,7 +89,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "release-as": "0.2.0",
       "skip-changelog": true,
       "draft": true,
       "extra-files": [{ "type": "generic", "path": "build.zig.zon" }]
