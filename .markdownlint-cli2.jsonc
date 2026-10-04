@@ -1,0 +1,11 @@
+{
+  // Towncrier supplies fragment headings when it folds them into CHANGELOG.md.
+  // READMEs remain standalone documents, and every other structural rule stays on.
+  "overrides": [
+    {
+      "filter": ["changelog.d/*.md", "!changelog.d/README.md"],
+      "config": { "MD041": false },
+      "combine": "merge"
+    }
+  ]
+}

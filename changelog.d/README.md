@@ -1,6 +1,8 @@
 ---
 doc_radar:
   sentinels:
+    - file: .markdownlint-cli2.jsonc
+      contains: ['"filter": ["changelog.d/*.md", "!changelog.d/README.md"]', '"config": { "MD041": false }', '"combine": "merge"']
     - file: .github/workflows/release.yml
       contains: ['command: notes', '--notes-file /tmp/release-notes.md']
     - file: release-please-config.json
