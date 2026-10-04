@@ -6,7 +6,7 @@ doc_radar:
     - file: .github/workflows/release.yml
       contains: ['command: notes', '--notes-file /tmp/release-notes.md']
     - file: release-please-config.json
-      contains: ['"always-update": true', '"include-component-in-tag": false']
+      contains: ['"always-update": true', '"include-component-in-tag": false', '"force-tag-creation": true']
       absent: ['"package-name"']
     - file: brigade.zig
       contains: ['.init(std.heap.page_allocator', 'allocation_check != 0', 'std.enums.EnumIndexer(std.log.Level)']
