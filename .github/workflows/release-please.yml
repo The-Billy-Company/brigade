@@ -144,7 +144,8 @@ jobs:
           export SOURCE_DATE_EPOCH
           uv run --no-project --exclude-newer P2D --python 3.12 --with towncrier==26.9.0 \
             towncrier build --yes --version "$version"
-          if git diff --quiet -- CHANGELOG.md changelog.d; then
+          # Towncrier stages its fold; compare the index and worktree with HEAD.
+          if git diff --quiet HEAD -- CHANGELOG.md changelog.d; then
             echo "nothing new to fold at $version"
             exit 0
           fi
