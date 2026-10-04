@@ -13,7 +13,7 @@ doc_radar:
     - file: build.zig.zon
       contains: ['.minimum_zig_version = "0.16.0"', '.dependencies = .{}']
     - file: .github/workflows/ci.yml
-      contains: ['ZIG_VERSION: 0.16.0', 'zoning==1.4.0', 'zizmor==1.30.1', 'version: "latest-known"', "group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}"]
+      contains: ['ZIG_VERSION: 0.16.0', 'zoning==1.4.0', 'zizmor==1.30.1', 'version: "0.12.17"', "group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}"]
     - file: .github/workflows/release-please.yml
       contains: ['towncrier==26.9.0', 'export SOURCE_DATE_EPOCH', 'git diff --quiet HEAD -- CHANGELOG.md changelog.d']
 ---

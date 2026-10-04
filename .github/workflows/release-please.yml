@@ -119,14 +119,14 @@ jobs:
           ref: ${{ fromJson(needs.release-please.outputs.pr).headBranchName }}
 
       - id: version
-        uses: The-Billy-Company/.github/actions/package-release@18530e6f8b7ad634dcfe52e423e2a0a8e7bd521e # main
+        uses: The-Billy-Company/.github/actions/package-release@a404e12749981c1909c8f751d477159a7bf74aee # main
         with:
           command: version
           args: --root .
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: "latest-known"
+          version: "0.12.17"
           enable-cache: false
 
       # Both interpolations arrive through `env` rather than into the shell text: a

@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: The-Billy-Company/.github/actions/package-release@18530e6f8b7ad634dcfe52e423e2a0a8e7bd521e # main
+      - uses: The-Billy-Company/.github/actions/package-release@a404e12749981c1909c8f751d477159a7bf74aee # main
         with:
           command: changelog
           args: --root .
@@ -85,7 +85,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: "latest-known"
+          version: "0.12.17"
       - run: uv run --no-project --exclude-newer P2D --with zizmor==1.30.1 zizmor --no-online-audits --strict-collection .
       - uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
 
@@ -105,7 +105,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: "latest-known"
+          version: "0.12.17"
       # The fix is in the code, or in a `variance ... because "..."` that says
       # what would retire it — never in widening the contract to match whatever
       # the imports happen to do today. `--complete` adds the claim no law can
