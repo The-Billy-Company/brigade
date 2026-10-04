@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: The-Billy-Company/.github/actions/package-release@a404e12749981c1909c8f751d477159a7bf74aee # main
+      - uses: The-Billy-Company/.github/actions/package-release@b19a03c66361d004a7270bba50e386f449d0f9bf # main
         with:
           command: changelog
           args: --root .

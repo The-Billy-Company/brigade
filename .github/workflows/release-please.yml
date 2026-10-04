@@ -119,7 +119,7 @@ jobs:
           ref: ${{ fromJson(needs.release-please.outputs.pr).headBranchName }}
 
       - id: version
-        uses: The-Billy-Company/.github/actions/package-release@a404e12749981c1909c8f751d477159a7bf74aee # main
+        uses: The-Billy-Company/.github/actions/package-release@b19a03c66361d004a7270bba50e386f449d0f9bf # main
         with:
           command: version
           args: --root .
