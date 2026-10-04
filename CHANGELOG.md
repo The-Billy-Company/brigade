@@ -7,6 +7,53 @@ documented here. Format follows
 
 <!-- towncrier release notes start -->
 
+## [0.2.0] - 2026-10-04
+
+### Changed
+
+- We keep the advertised Zig 0.16 floor, and the runner also compiles with 0.17.
+  It uses SafeAllocator on the new compiler, with the stock test runner's checks and
+  per-test leak accounting. Real process fixtures prove a leak fails its run,
+  leaves the next test clean, and keeps errors and skips in their own counts.
+
+  CI and release stay on the compiler that has cleared quarantine. We updated
+  checkout, uv setup,
+  actionlint, zizmor, zoning and towncrier; the new uv selector uses the action's
+  known checksums, and every direct Python tool resolution keeps a two-day floor.
+  Main gives each commit its own CI group, so a later push cannot cancel its
+  release evidence.
+
+  Changelog folds use the release PR's commit timestamp. The same source gets the
+  same date when the fold is retried, through towncrier's new SOURCE_DATE_EPOCH
+  support. The runner's public API and its summary format stay the same.
+
+  We also join the folded changelog to the GitHub release body through the shared
+  release action's new notes command. The bot's standalone component config now
+  agrees with the component-free tag, and every main push refreshes the open PR
+  so a hidden docs or CI commit cannot leave its fragments behind.
+
+### Fixed
+
+- The install section said `url + hash` and left the reader to derive both, because
+  until v0.1.0 there was no tag to derive them from - the only honest spelling was
+  a raw commit tarball, which is not something a README should teach.
+
+  It now leads with `zig fetch --save` against the tagged archive, which writes
+  both fields and re-derives the hash itself, and keeps the sibling-checkout path
+  dependency as the second form rather than the first. That ordering matches who
+  is reading: someone adopting the package has no checkout beside theirs.
+- We commit Towncrier's staged changelog and fragment removals onto the release
+  PR. The fold now compares both staged and unstaged changes with HEAD, so staged
+  release notes cannot disappear behind a successful "nothing new" check.
+- We create the release tag while its GitHub release is still a draft. That starts
+  the existing tag-triggered checks, which prove the actual archive and compiled
+  runner before publishing the release page.
+- We lint release fragments as parts of a page. Towncrier supplies their headings
+  when it folds them, so the push hook no longer demands a second page title in
+  each fragment. READMEs still need their titles, and fragments keep every other
+  Markdown structure check.
+
+
 ## [0.1.0] - 2026-08-03
 
 ### Added
