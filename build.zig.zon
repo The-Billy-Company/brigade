@@ -1,6 +1,6 @@
 .{
     .name = .brigade,
-    .version = "0.1.0", // x-release-please-version
+    .version = "0.2.0", // x-release-please-version
     .fingerprint = 0x80206e9d495f7dd6,
     .minimum_zig_version = "0.16.0",
     // Nothing. A test runner that needed a dependency graph to run your tests
