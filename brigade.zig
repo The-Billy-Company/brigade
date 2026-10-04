@@ -269,7 +269,14 @@ pub fn main(init: std.process.Init.Minimal) void {
 
         // Per-test state, reset exactly as the stock runner resets it: a test
         // that leaks must be attributed to itself, not to whatever ran before.
-        testing.allocator_instance = .{};
+        testing.allocator_instance = if (comptime std.meta.hasFn(@TypeOf(testing.allocator_instance), "init"))
+            .init(std.heap.page_allocator, .{
+                // Match the stock runner's distinct testing canary and checks.
+                .canary = 0xc3a701ba,
+                .check_write_after_free = true,
+            })
+        else
+            .init;
         testing.io_instance = .init(testing.allocator, .{
             .argv0 = .init(init.args),
             .environ = init.environ,
@@ -284,7 +291,11 @@ pub fn main(init: std.process.Init.Minimal) void {
         const result = test_fn.func();
         const test_ms = entered.durationTo(Io.Clock.now(.awake, runner_io)).toMilliseconds();
         testing.io_instance.deinit();
-        const leaked = testing.allocator_instance.deinit() == .leak;
+        const allocation_check = testing.allocator_instance.deinit();
+        const leaked = if (comptime @TypeOf(allocation_check) == usize)
+            allocation_check != 0
+        else
+            allocation_check == .leak;
         test_node.end();
 
         if (report_times) sink().print("{d}\t{s}\n", .{ test_ms, test_fn.name }) catch {};
@@ -396,8 +407,9 @@ pub fn log(
     args: anytype,
 ) void {
     @disableInstrumentation();
-    if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) log_err_count +|= 1;
-    if (@intFromEnum(message_level) <= @intFromEnum(testing.log_level)) {
+    const levels = std.enums.EnumIndexer(std.log.Level);
+    if (message_level == .err) log_err_count +|= 1;
+    if (levels.indexOf(message_level) <= levels.indexOf(testing.log_level)) {
         std.debug.print(
             "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
             args,

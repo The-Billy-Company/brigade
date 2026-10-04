@@ -63,6 +63,7 @@
   "include-component-in-tag": false,
   "include-v-in-tag": true,
   "separate-pull-requests": false,
+  "always-update": true,
   "draft": true,
   "prerelease": false,
   "bump-minor-pre-major": true,
@@ -86,7 +87,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "brigade",
       "skip-changelog": true,
       "draft": true,
       "extra-files": [{ "type": "generic", "path": "build.zig.zon" }]

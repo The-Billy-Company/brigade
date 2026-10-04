@@ -1,3 +1,21 @@
+---
+doc_radar:
+  sentinels:
+    - file: .github/workflows/release.yml
+      contains: ['command: notes', '--notes-file /tmp/release-notes.md']
+    - file: release-please-config.json
+      contains: ['"always-update": true', '"include-component-in-tag": false']
+      absent: ['"package-name"']
+    - file: brigade.zig
+      contains: ['.init(std.heap.page_allocator', 'allocation_check != 0', 'std.enums.EnumIndexer(std.log.Level)']
+    - file: build.zig.zon
+      contains: ['.minimum_zig_version = "0.16.0"', '.dependencies = .{}']
+    - file: .github/workflows/ci.yml
+      contains: ['ZIG_VERSION: 0.16.0', 'zoning==1.4.0', 'zizmor==1.30.1', 'version: "latest-known"', "group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}"]
+    - file: .github/workflows/release-please.yml
+      contains: ['towncrier==26.9.0', 'export SOURCE_DATE_EPOCH']
+---
+
 # `changelog.d/` — towncrier news fragments
 
 Per-change fragments for `brigade`. They fold into

@@ -196,9 +196,49 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run brigade's own suite (self-hosted: brigade runs it)");
     bg.shard(test_step, selection, .{});
     partition(b, target, optimize, bg, test_step);
+    outcomes(b, target, optimize, bg, test_step);
 
     b.step("check", "Compile the suite without running it (--watch / ZLS loop)")
         .dependOn(&selection.step);
+}
+
+/// Check real failures, leaks and skips through the same process boundary a
+/// consumer relies on. In particular, leaking once must not charge the next test.
+fn outcomes(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    bg: Brigade,
+    test_step: *std.Build.Step,
+) void {
+    const fixtures = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/outcomes.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .test_runner = bg.runner(),
+    });
+    const claims = .{
+        // The allocator logs an error on a leak, which also fails that test.
+        .{ null, 1, "3 passed, 1 skipped, 3 failed, 1 leaked, 0 fuzz of 5" },
+        .{ "runner-leak", 1, "1 passed, 0 skipped, 1 failed, 1 leaked, 0 fuzz of 1" },
+        .{ "runner-clean", 0, "1 passed, 0 skipped, 0 failed, 0 leaked, 0 fuzz of 1" },
+        .{ "runner-error", 1, "0 passed, 0 skipped, 1 failed, 0 leaked, 0 fuzz of 1" },
+        .{ "runner-logged-error", 1, "1 passed, 0 skipped, 1 failed, 0 leaked, 0 fuzz of 1" },
+        .{ "runner-skip", 0, "0 passed, 1 skipped, 0 failed, 0 leaked, 0 fuzz of 1" },
+    };
+    inline for (claims) |claim| {
+        const filter: ?[]const u8 = claim[0];
+        const run = narrowed(b, fixtures, filter, null);
+        run.expectExitCode(claim[1]);
+        run.addCheck(if (claim[1] == 0)
+            .{ .expect_stdout_match = claim[2] }
+        else
+            .{ .expect_stderr_match = claim[2] });
+        run.setName(b.fmt("outcomes: {s}", .{filter orelse "all"}));
+        test_step.dependOn(&run.step);
+    }
 }
 
 /// Point the real runner at a 12-test corpus and check what each spelling

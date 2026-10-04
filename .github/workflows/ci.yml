@@ -12,10 +12,10 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A force-push mid-run should cancel the run it obsoleted, not race it.
+# A branch supersedes its old run; main keeps each commit's release evidence.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -32,7 +32,7 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -47,7 +47,7 @@ jobs:
     name: fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
@@ -62,10 +62,10 @@ jobs:
     name: changelog
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: The-Billy-Company/.github/actions/package-release@deb135f046122a10cabc861e96eb9941c2d09ddc # main
+      - uses: The-Billy-Company/.github/actions/package-release@18530e6f8b7ad634dcfe52e423e2a0a8e7bd521e # main
         with:
           command: changelog
           args: --root .
@@ -80,12 +80,14 @@ jobs:
     name: actions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
-      - run: uv run --no-project --with zizmor==1.29.0 zizmor --no-online-audits --strict-collection .
-      - uses: docker://rhysd/actionlint:1.7.7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "latest-known"
+      - run: uv run --no-project --exclude-newer P2D --with zizmor==1.30.1 zizmor --no-online-audits --strict-collection .
+      - uses: docker://rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
 
   # `contract/brigade.zone` declares this package's import topology. The graph is
   # small enough today that the contract reads like a formality — which is the
@@ -98,16 +100,18 @@ jobs:
     name: topology
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "latest-known"
       # The fix is in the code, or in a `variance ... because "..."` that says
       # what would retire it — never in widening the contract to match whatever
       # the imports happen to do today. `--complete` adds the claim no law can
       # make: every package here carries a contract, including the next one.
       - name: Import topology
-        run: uv run --no-project --with zoning==1.1.0 zoning verify --complete
+        run: uv run --no-project --exclude-newer P2D --with zoning==1.4.0 zoning verify --complete
 
   # The one check `release.yml`'s preflight polls for on the exact tagged
   # commit (`release.toml`'s `[ci].required_check`). Everything above feeds
