@@ -192,6 +192,61 @@ fn envValue(environ: std.process.Environ, comptime key: []const u8) ?[]const u8 
     return dest[0..std.unicode.wtf16LeToWtf8(dest, wide)];
 }
 
+/// Optional per-process lifecycle receipt. Collection precedes execution and
+/// compiler debug locations bind named and anonymous tests to authored source.
+const Events = struct {
+    file: Io.File,
+    run: i64,
+
+    fn open(directory: []const u8) !Events {
+        var run: i64 = undefined;
+        try runner_io.randomSecure(std.mem.asBytes(&run));
+        var path: [std.fs.max_path_bytes]u8 = undefined;
+        const name = try std.fmt.bufPrint(&path, "{s}/brigade-{d}-{d}.jsonl", .{
+            directory, run, std.Thread.getCurrentId(),
+        });
+        return .{ .file = try Io.Dir.cwd().createFile(runner_io, name, .{ .exclusive = true }), .run = run };
+    }
+
+    fn emit(events: Events, kind: []const u8, index: ?usize, status: ?[]const u8, duration: f64) !void {
+        var arena: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+        defer arena.deinit();
+        const allocator = arena.allocator();
+        const Row = struct {
+            nodeid: []const u8,
+            classname: []const u8,
+            name: []const u8,
+            file: ?[]const u8,
+            line: ?u64,
+            status: ?[]const u8,
+            duration_seconds: f64,
+        };
+        var row: ?Row = null;
+        if (index) |i| {
+            const test_fn = builtin.test_functions[i];
+            const debug_info = try std.debug.getSelfDebugInfo();
+            var symbols: std.ArrayList(std.debug.Symbol) = .empty;
+            try debug_info.getSymbols(runner_io, allocator, allocator, @intFromPtr(test_fn.func), false, &symbols);
+            if (symbols.items.len != 1 or symbols.items[0].source_location == null) return error.MissingTestSource;
+            const source = symbols.items[0].source_location.?;
+            row = .{
+                .nodeid = try std.fmt.allocPrint(allocator, "brigade:{d}:{d}", .{ events.run, i }),
+                .classname = source.file_name,
+                .name = test_fn.name,
+                .file = source.file_name,
+                .line = source.line,
+                .status = status,
+                .duration_seconds = duration,
+            };
+        }
+        var buffer: [4096]u8 = undefined;
+        var writer = events.file.writerStreaming(runner_io, &buffer);
+        try std.json.Stringify.value(.{ .protocol = "brigade", .run = events.run, .type = kind, .row = row }, .{ .emit_null_optional_fields = false }, &writer.interface);
+        try writer.interface.writeByte('\n');
+        try writer.interface.flush();
+    }
+};
+
 pub fn main(init: std.process.Init.Minimal) void {
     @disableInstrumentation();
 
@@ -247,6 +302,26 @@ pub fn main(init: std.process.Init.Minimal) void {
         );
     }
 
+    const events: ?Events = if (envValue(init.environ, "BRIGADE_EVENTS")) |directory|
+        Events.open(directory) catch |err| std.process.fatal("cannot open brigade receipt: {t}", .{err})
+    else
+        null;
+    defer if (events) |capture| capture.file.close(runner_io);
+    if (events) |capture| {
+        capture.emit("start", null, null, 0) catch |err| std.process.fatal("cannot publish brigade receipt: {t}", .{err});
+        var offset: usize = 0;
+        for (builtin.test_functions, 0..) |test_fn, index| {
+            if (!selects(filter, skip, test_fn.name)) {
+                if (shard.index == 0) capture.emit("deselected", index, null, 0) catch |err|
+                    std.process.fatal("cannot publish brigade receipt: {t}", .{err});
+                continue;
+            }
+            defer offset += 1;
+            if (shard.owns(offset)) capture.emit("collected", index, null, 0) catch |err|
+                std.process.fatal("cannot publish brigade receipt: {t}", .{err});
+        }
+    }
+
     var pass: usize = 0;
     var skipped: usize = 0;
     var fail: usize = 0;
@@ -262,10 +337,12 @@ pub fn main(init: std.process.Init.Minimal) void {
     const started = Io.Clock.now(.awake, runner_io);
 
     var position: usize = 0;
-    for (builtin.test_functions) |test_fn| {
+    for (builtin.test_functions, 0..) |test_fn, index| {
         if (!selects(filter, skip, test_fn.name)) continue;
         defer position += 1;
         if (!shard.owns(position)) continue;
+
+        const capture_entered = if (events != null) Io.Clock.now(.awake, runner_io) else null;
 
         // Per-test state, reset exactly as the stock runner resets it: a test
         // that leaks must be attributed to itself, not to whatever ran before.
@@ -323,7 +400,16 @@ pub fn main(init: std.process.Init.Minimal) void {
             });
         }
         fuzz_count += @intFromBool(is_fuzz_test);
+        if (events) |capture| {
+            const status = if (leaked or log_err_count != 0) "failed" else if (result) |_| "passed" else |err| if (err == error.SkipZigTest) "skipped" else "failed";
+            const elapsed = capture_entered.?.durationTo(Io.Clock.now(.awake, runner_io)).toNanoseconds();
+            capture.emit("result", index, status, @as(f64, @floatFromInt(elapsed)) / std.time.ns_per_s) catch |err|
+                std.process.fatal("cannot publish brigade receipt: {t}", .{err});
+        }
     }
+
+    if (events) |capture| capture.emit("end", null, null, 0) catch |err|
+        std.process.fatal("cannot publish brigade receipt: {t}", .{err});
 
     const elapsed_ms = started.durationTo(Io.Clock.now(.awake, runner_io)).toMilliseconds();
     var line: [256]u8 = undefined;
