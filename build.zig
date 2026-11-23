@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 //! The build-side half of brigade: the shard fan-out, and the three `-D`
 //! options that steer it.
 //!

@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 //! Real adverse outcomes: a leak must fail its run without contaminating the
 //! following clean test, and errors and skips must retain their own counts.
 

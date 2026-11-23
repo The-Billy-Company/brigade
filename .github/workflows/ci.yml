@@ -119,9 +119,21 @@ jobs:
   # discovering it minutes into the archive verification. `if: always()` is
   # required — the default `if` on a job would skip this one the moment
   # anything upstream failed, which is exactly the case it has to report on.
+  copyright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test the copyright checker
+        run: python3 -m unittest discover -s tools/copyright -p 'test_*.py'
+      - name: Check source copyright headers
+        run: python3 tools/copyright/check.py --root .
+
   release-ready:
     if: always()
-    needs: [test, fmt, changelog, actions, topology]
+    needs: [copyright, test, fmt, changelog, actions, topology]
     runs-on: ubuntu-latest
     steps:
       - name: every required job is green

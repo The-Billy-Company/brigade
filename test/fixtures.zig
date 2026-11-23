@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 //! A corpus with exactly one property: twelve tests, declared in a known
 //! order, each of which does nothing and cannot fail.
 //!

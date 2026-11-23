@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 The Billy Company
 """Prove the tagged tarball is what a consumer's `zig fetch` will actually get.
 
 brigade ships to no package registry — a git tag alone makes `zig fetch

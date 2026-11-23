@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 .{
     .name = .brigade,
     .version = "0.2.0", // x-release-please-version

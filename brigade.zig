@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 //! brigade — a shard-aware unit-test runner for Zig.
 //!
 //! Zig's stock runner walks `builtin.test_functions` start to finish in one

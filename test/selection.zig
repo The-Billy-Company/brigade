@@ -1,3 +1,4 @@
+// Copyright (c) 2026 The Billy Company
 //! The algebra brigade rests on: which process claims which test, and which
 //! names a run admits.
 //!
